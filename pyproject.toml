@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gds_viewer"
+dynamic = ["version"]
+description = "GDSII viewer and headless PNG export with IHP SG13G2 layer colors and fill patterns"
+authors = [
+    { name = "Volker Muehlhaus", email = "volker@muehlhaus.com" }
+]
+license = "Apache-2.0"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "gdspy>1.6.0",
+    "matplotlib",
+    "numpy",
+]
+
+[project.scripts]
+gds_viewer = "gds_viewer:main"
+
+[tool.setuptools]
+py-modules = ["gds_viewer"]
+
+[tool.setuptools.dynamic]
+version = {attr = "gds_viewer.__version__"}

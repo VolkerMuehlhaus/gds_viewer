@@ -24,6 +24,8 @@ import sys
 
 import gdspy
 
+__version__ = "0.1.0"
+
 # Hardcoded from sg13g2.lyp (IHP SG13G2 KLayout layer properties): (layer, datatype)
 # -> (fill-color, dither-pattern name). Values are copied verbatim from the .lyp's
 # <fill-color> and <dither-pattern>. See PATTERN_TILES below for what each pattern
@@ -568,11 +570,19 @@ def pick_cell(lib, cellname):
     return top_cells[0]
 
 
-def render_screenshot(cell, output_path, background="#000000"):
+def render_screenshot(cell, output_path, background="#000000", width_px=None, labels=None,
+                      outline_layers=None):
     """Render the cell's full geometry (no GUI window needed) and save it as PNG.
 
     Uses the exact PATTERN_TILES bitmaps (not gdspy's 10-pattern GUI palette),
     so this is a pixel-accurate reproduction of sg13g2.lyp's fill patterns.
+
+    output_path: file name or binary file object.
+    width_px: image width in pixels (default 2400).
+    labels: optional list of (x, y, text) in layout coordinates, drawn on top
+    with a marker, e.g. to show port locations.
+    outline_layers: optional set of layer numbers drawn as outlines only, e.g.
+    helper layers without SG13G2 style that would otherwise hide other layers.
     """
     import matplotlib
 
@@ -588,7 +598,7 @@ def render_screenshot(cell, output_path, background="#000000"):
     width, height = x1 - x0, y1 - y0
     fig_width = 12.0
     fig_height = max(4.0, min(20.0, fig_width * height / width))
-    dpi = 200
+    dpi = 200 if width_px is None else width_px / fig_width
 
     fig, ax = plt.subplots(figsize=(fig_width, fig_height), facecolor=background)
     ax.set_facecolor(background)
@@ -619,6 +629,18 @@ def render_screenshot(cell, output_path, background="#000000"):
                     facecolor="none",
                     edgecolor=color,
                     linewidth=OUTLINE_LINEWIDTH,
+                    linestyle="solid",
+                )
+            )
+            continue
+
+        if key[0] in (outline_layers or ()):
+            ax.add_patch(
+                PathPatch(
+                    compound_path,
+                    facecolor="none",
+                    edgecolor=color,
+                    linewidth=OUTLINE_LINEWIDTH * 2,
                     linestyle="solid",
                 )
             )
@@ -669,6 +691,15 @@ def render_screenshot(cell, output_path, background="#000000"):
             )
         )
 
+    import matplotlib.patheffects as patheffects
+
+    outline = [patheffects.withStroke(linewidth=3, foreground="black")]
+    for x, y, text in labels or []:
+        ax.plot(x, y, marker="o", markersize=7, markerfacecolor="none", markeredgecolor="white",
+                markeredgewidth=1.5, path_effects=outline)
+        ax.annotate(text, (x, y), xytext=(6, 6), textcoords="offset points", color="white",
+                    fontsize=13, fontweight="bold", path_effects=outline)
+
     ax.set_xlim(x0, x1)
     ax.set_ylim(y0, y1)
     ax.set_aspect("equal")
@@ -691,6 +722,11 @@ def main():
         metavar="FILE.png",
         help="save the layout as a PNG to FILE.png instead of opening the GUI",
     )
+    parser.add_argument(
+        "--width", type=int, default=None, metavar="PIXELS",
+        help="width of the --screenshot PNG in pixels (default 2400)",
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args()
 
     lib = gdspy.GdsLibrary(infile=args.gds_file)
@@ -698,7 +734,7 @@ def main():
     print(f"Displaying cell '{cell.name}' from {args.gds_file}")
 
     if args.screenshot:
-        render_screenshot(cell, args.screenshot)
+        render_screenshot(cell, args.screenshot, width_px=args.width)
         print(f"Saved screenshot to {args.screenshot}")
         return
 

@@ -3,16 +3,33 @@
 A command-line GDSII layout viewer built on [gdspy](https://github.com/heitzmann/gdspy), with IHP SG13G2 layer colors and fill patterns applied automatically. No KLayout installation is required to view a layout with correct-looking colors.
 
 ```
-python gds_viewer.py layout.gds
-python gds_viewer.py layout.gds --cellname MY_CELL
-python gds_viewer.py layout.gds --screenshot layout.png
+pip install gds_viewer
+
+gds_viewer layout.gds
+gds_viewer layout.gds --cellname MY_CELL
+gds_viewer layout.gds --screenshot layout.png --width 1200
 ```
+
+Without installing, `python gds_viewer.py ...` works the same way.
+
+From Python:
+
+```python
+import gdspy, gds_viewer
+
+cell = gdspy.GdsLibrary(infile="layout.gds").top_level()[0]
+gds_viewer.render_screenshot(cell, "layout.png", width_px=1200, labels=[(10.0, 0.0, "P1")])
+```
+
+`labels` draws a marker and a text at layout coordinates, for example to show port locations.
 
 ## Options
 
 - `gds_file` (positional) - input GDSII file
 - `--cellname` - cell to display (default: first top-level cell in the file)
 - `--screenshot FILE.png` - render the layout to a PNG and exit, instead of opening the interactive GUI
+- `--width PIXELS` - width of the `--screenshot` PNG (default 2400)
+- `--version` - print the version
 
 ## Interactive viewer
 
@@ -31,7 +48,7 @@ Renders headlessly via matplotlib (no GUI/display needed, works over SSH or in C
 ## Requirements
 
 - `gdspy`
-- `matplotlib` and `numpy` (only needed for `--screenshot`)
+- `matplotlib` and `numpy` (only needed for `--screenshot`; `pip install gds_viewer` installs all three)
 
 ## How the layer styling was derived
 
