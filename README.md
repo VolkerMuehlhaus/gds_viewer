@@ -43,7 +43,7 @@ gdspy's viewer only supports 10 built-in fill patterns, so `sg13g2.lyp`'s ~54 di
 
 Renders headlessly via matplotlib (no GUI/display needed, works over SSH or in CI) and saves a PNG. Unlike the interactive viewer, fill patterns here are pixel-accurate reproductions of `sg13g2.lyp`'s actual dither patterns, not an approximation - reverse-engineered by rendering the real IHP SG13G2 technology through KLayout itself and sampling the resulting pixels.
 
-[<img src="./doc/gds_viewer_screenshot.png" width="800" />](doc/gds_viewer_screenshot.png)
+[<img src="https://raw.githubusercontent.com/VolkerMuehlhaus/gds_viewer/main/doc/gds_viewer_screenshot.png" width="800" />](https://raw.githubusercontent.com/VolkerMuehlhaus/gds_viewer/main/doc/gds_viewer_screenshot.png)
 
 ## Requirements
 
@@ -60,4 +60,4 @@ If `sg13g2.lyp` ever changes, `LAYER_STYLES` and `PATTERN_TILES` need to be rege
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0 - see [LICENSE](./LICENSE) for the full text.
+This project is licensed under the Apache License, Version 2.0 - see [LICENSE](https://github.com/VolkerMuehlhaus/gds_viewer/blob/main/LICENSE) for the full text.

@@ -18,6 +18,9 @@ dependencies = [
     "numpy",
 ]
 
+[project.urls]
+Homepage = "https://github.com/VolkerMuehlhaus/gds_viewer"
+
 [project.scripts]
 gds_viewer = "gds_viewer:main"
 
