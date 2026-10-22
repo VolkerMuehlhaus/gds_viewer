@@ -571,7 +571,7 @@ def pick_cell(lib, cellname):
 
 
 def render_screenshot(cell, output_path, background="#000000", width_px=None, labels=None,
-                      outline_layers=None, layer_colors=None):
+                      outline_layers=None, layer_colors=None, pattern_scale=1, fill_alpha=None):
     """Render the cell's full geometry (no GUI window needed) and save it as PNG.
 
     Uses the exact PATTERN_TILES bitmaps (not gdspy's 10-pattern GUI palette),
@@ -588,6 +588,13 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
     fill in its color ("#rrggbb", or "#rrggbbaa" with transparency), drawn in
     the order of the dict (first = bottom); other layers are solid
     DEFAULT_COLOR, drawn first.
+    pattern_scale: integer >= 1. Each pixel of the fill patterns becomes a
+    pattern_scale x pattern_scale block, and outlines get pattern_scale times
+    wider, so the 1-pixel pattern lines stay visible when the image is shown
+    smaller than it was rendered. 1 (default) is the exact KLayout look.
+    fill_alpha: optional 0..1. Adds a solid fill in the layer color with this
+    opacity under each fill pattern, so that metal areas stay visible when the
+    image is shown small. None (default) is the exact KLayout look.
     """
     import matplotlib
 
@@ -601,9 +608,14 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
 
     (x0, y0), (x1, y1) = cell.get_bounding_box()
     width, height = x1 - x0, y1 - y0
+    # figure with the layout's own aspect ratio, so there are no empty bands
+    # around it; very tall layouts get a narrower figure instead of a taller one
     fig_width = 12.0
-    fig_height = max(4.0, min(20.0, fig_width * height / width))
-    dpi = 200 if width_px is None else width_px / fig_width
+    fig_height = fig_width * height / width
+    if fig_height > 20.0:
+        fig_width, fig_height = fig_width * 20.0 / fig_height, 20.0
+    fig_height = max(fig_height, 0.5)
+    dpi = 200 * 12.0 / fig_width if width_px is None else width_px / fig_width
 
     fig, ax = plt.subplots(figsize=(fig_width, fig_height), facecolor=background)
     ax.set_facecolor(background)
@@ -641,7 +653,7 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
                     compound_path,
                     facecolor="none",
                     edgecolor=color,
-                    linewidth=OUTLINE_LINEWIDTH,
+                    linewidth=OUTLINE_LINEWIDTH * pattern_scale,
                     linestyle="solid",
                 )
             )
@@ -653,7 +665,7 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
                     compound_path,
                     facecolor="none",
                     edgecolor=color,
-                    linewidth=OUTLINE_LINEWIDTH * 2,
+                    linewidth=OUTLINE_LINEWIDTH * 2 * pattern_scale,
                     linestyle="solid",
                 )
             )
@@ -666,13 +678,19 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
                     compound_path,
                     facecolor=color,
                     edgecolor=color,
-                    linewidth=OUTLINE_LINEWIDTH,
+                    linewidth=OUTLINE_LINEWIDTH * pattern_scale,
                     linestyle="solid",
                 )
             )
             continue
 
+        if fill_alpha:
+            # zorder 0 like the pattern image (patches default to 1): drawn just below its own pattern
+            ax.add_patch(PathPatch(compound_path, facecolor=color, edgecolor="none", alpha=fill_alpha, zorder=0))
+
         tile = np.array([[c == "*" for c in row] for row in tile_rows], dtype=bool)
+        if pattern_scale > 1:
+            tile = np.kron(tile, np.ones((pattern_scale, pattern_scale), dtype=bool))
         th, tw = tile.shape
         rgb = tuple(int(color[i : i + 2], 16) for i in (1, 3, 5))
         rgba_tile = np.zeros((th, tw, 4), dtype=np.uint8)
@@ -699,7 +717,7 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
                 compound_path,
                 facecolor="none",
                 edgecolor=color,
-                linewidth=OUTLINE_LINEWIDTH,
+                linewidth=OUTLINE_LINEWIDTH * pattern_scale,
                 linestyle="solid",
             )
         )
@@ -739,6 +757,16 @@ def main():
         "--width", type=int, default=None, metavar="PIXELS",
         help="width of the --screenshot PNG in pixels (default 2400)",
     )
+    parser.add_argument(
+        "--pattern-scale", type=int, default=1, metavar="N",
+        help="draw fill pattern pixels as NxN blocks and outlines N times wider in the --screenshot "
+             "PNG, so patterns stay visible when the image is shown small (default 1: exact KLayout look)",
+    )
+    parser.add_argument(
+        "--fill-alpha", type=float, default=None, metavar="0..1",
+        help="add a solid fill with this opacity under the fill patterns of the --screenshot PNG, "
+             "so metal stays visible when the image is shown small (default: exact KLayout look)",
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args()
 
@@ -747,7 +775,8 @@ def main():
     print(f"Displaying cell '{cell.name}' from {args.gds_file}")
 
     if args.screenshot:
-        render_screenshot(cell, args.screenshot, width_px=args.width)
+        render_screenshot(cell, args.screenshot, width_px=args.width, pattern_scale=max(1, args.pattern_scale),
+                          fill_alpha=args.fill_alpha)
         print(f"Saved screenshot to {args.screenshot}")
         return
 
