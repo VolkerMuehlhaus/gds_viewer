@@ -24,7 +24,7 @@ import sys
 
 import gdspy
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # Hardcoded from sg13g2.lyp (IHP SG13G2 KLayout layer properties): (layer, datatype)
 # -> (fill-color, dither-pattern name). Values are copied verbatim from the .lyp's
@@ -571,7 +571,7 @@ def pick_cell(lib, cellname):
 
 
 def render_screenshot(cell, output_path, background="#000000", width_px=None, labels=None,
-                      outline_layers=None):
+                      outline_layers=None, layer_colors=None):
     """Render the cell's full geometry (no GUI window needed) and save it as PNG.
 
     Uses the exact PATTERN_TILES bitmaps (not gdspy's 10-pattern GUI palette),
@@ -583,6 +583,11 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
     with a marker, e.g. to show port locations.
     outline_layers: optional set of layer numbers drawn as outlines only, e.g.
     helper layers without SG13G2 style that would otherwise hide other layers.
+    layer_colors: optional {layer number: color} for other technologies than
+    SG13G2. The SG13G2 styles are then not used: each listed layer is a solid
+    fill in its color ("#rrggbb", or "#rrggbbaa" with transparency), drawn in
+    the order of the dict (first = bottom); other layers are solid
+    DEFAULT_COLOR, drawn first.
     """
     import matplotlib
 
@@ -610,14 +615,22 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
 
     # Draw in the same order sg13g2.lyp lists its layers, so layers stack the same
     # way they do in KLayout, instead of gdspy's arbitrary GDS-stream element order.
-    ordered_keys = [k for k in LAYER_STYLES if k in polygons_by_spec]
-    ordered_keys += [k for k in polygons_by_spec if k not in LAYER_STYLES]
+    # With layer_colors (other technologies), draw in that order instead, all solid.
+    if layer_colors is None:
+        ordered_keys = [k for k in LAYER_STYLES if k in polygons_by_spec]
+        ordered_keys += [k for k in polygons_by_spec if k not in LAYER_STYLES]
+    else:
+        rank = {int(layer): i for i, layer in enumerate(layer_colors)}
+        ordered_keys = sorted(polygons_by_spec, key=lambda k: (rank.get(int(k[0]), -1), k))
 
     for key in ordered_keys:
-        if key[1] in HIDDEN_DATATYPES:
+        if layer_colors is None and key[1] in HIDDEN_DATATYPES:
             continue
         polygons = polygons_by_spec[key]
-        color, pattern_name = LAYER_STYLES.get(key, (DEFAULT_COLOR, DEFAULT_PATTERN))
+        if layer_colors is None:
+            color, pattern_name = LAYER_STYLES.get(key, (DEFAULT_COLOR, DEFAULT_PATTERN))
+        else:
+            color, pattern_name = layer_colors.get(int(key[0]), DEFAULT_COLOR), None
         compound_path = Path.make_compound_path(*(Path(p) for p in polygons))
 
         tile_rows = PATTERN_TILES.get(pattern_name) if pattern_name else None

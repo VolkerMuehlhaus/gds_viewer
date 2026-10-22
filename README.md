@@ -23,6 +23,8 @@ gds_viewer.render_screenshot(cell, "layout.png", width_px=1200, labels=[(10.0, 0
 
 `labels` draws a marker and a text at layout coordinates, for example to show port locations.
 
+For other technologies than IHP SG13G2, pass `layer_colors={layer: "#rrggbb", ...}` (also `"#rrggbbaa"` with transparency): the SG13G2 styles are then not used, and each layer is a solid fill in its color, drawn in the order of the dict (first = bottom). `outline_layers` draws layers as outlines only. The gds2palace MCP server uses this with the material colors from a gds2palace stackup.
+
 ## Options
 
 - `gds_file` (positional) - input GDSII file
