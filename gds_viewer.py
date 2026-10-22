@@ -24,7 +24,7 @@ import sys
 
 import gdspy
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # Hardcoded from sg13g2.lyp (IHP SG13G2 KLayout layer properties): (layer, datatype)
 # -> (fill-color, dither-pattern name). Values are copied verbatim from the .lyp's
@@ -571,7 +571,7 @@ def pick_cell(lib, cellname):
 
 
 def render_screenshot(cell, output_path, background="#000000", width_px=None, labels=None,
-                      outline_layers=None):
+                      outline_layers=None, layer_colors=None, pattern_scale=1, fill_alpha=None):
     """Render the cell's full geometry (no GUI window needed) and save it as PNG.
 
     Uses the exact PATTERN_TILES bitmaps (not gdspy's 10-pattern GUI palette),
@@ -583,6 +583,18 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
     with a marker, e.g. to show port locations.
     outline_layers: optional set of layer numbers drawn as outlines only, e.g.
     helper layers without SG13G2 style that would otherwise hide other layers.
+    layer_colors: optional {layer number: color} for other technologies than
+    SG13G2. The SG13G2 styles are then not used: each listed layer is a solid
+    fill in its color ("#rrggbb", or "#rrggbbaa" with transparency), drawn in
+    the order of the dict (first = bottom); other layers are solid
+    DEFAULT_COLOR, drawn first.
+    pattern_scale: integer >= 1. Each pixel of the fill patterns becomes a
+    pattern_scale x pattern_scale block, and outlines get pattern_scale times
+    wider, so the 1-pixel pattern lines stay visible when the image is shown
+    smaller than it was rendered. 1 (default) is the exact KLayout look.
+    fill_alpha: optional 0..1. Adds a solid fill in the layer color with this
+    opacity under each fill pattern, so that metal areas stay visible when the
+    image is shown small. None (default) is the exact KLayout look.
     """
     import matplotlib
 
@@ -596,9 +608,14 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
 
     (x0, y0), (x1, y1) = cell.get_bounding_box()
     width, height = x1 - x0, y1 - y0
+    # figure with the layout's own aspect ratio, so there are no empty bands
+    # around it; very tall layouts get a narrower figure instead of a taller one
     fig_width = 12.0
-    fig_height = max(4.0, min(20.0, fig_width * height / width))
-    dpi = 200 if width_px is None else width_px / fig_width
+    fig_height = fig_width * height / width
+    if fig_height > 20.0:
+        fig_width, fig_height = fig_width * 20.0 / fig_height, 20.0
+    fig_height = max(fig_height, 0.5)
+    dpi = 200 * 12.0 / fig_width if width_px is None else width_px / fig_width
 
     fig, ax = plt.subplots(figsize=(fig_width, fig_height), facecolor=background)
     ax.set_facecolor(background)
@@ -610,14 +627,22 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
 
     # Draw in the same order sg13g2.lyp lists its layers, so layers stack the same
     # way they do in KLayout, instead of gdspy's arbitrary GDS-stream element order.
-    ordered_keys = [k for k in LAYER_STYLES if k in polygons_by_spec]
-    ordered_keys += [k for k in polygons_by_spec if k not in LAYER_STYLES]
+    # With layer_colors (other technologies), draw in that order instead, all solid.
+    if layer_colors is None:
+        ordered_keys = [k for k in LAYER_STYLES if k in polygons_by_spec]
+        ordered_keys += [k for k in polygons_by_spec if k not in LAYER_STYLES]
+    else:
+        rank = {int(layer): i for i, layer in enumerate(layer_colors)}
+        ordered_keys = sorted(polygons_by_spec, key=lambda k: (rank.get(int(k[0]), -1), k))
 
     for key in ordered_keys:
-        if key[1] in HIDDEN_DATATYPES:
+        if layer_colors is None and key[1] in HIDDEN_DATATYPES:
             continue
         polygons = polygons_by_spec[key]
-        color, pattern_name = LAYER_STYLES.get(key, (DEFAULT_COLOR, DEFAULT_PATTERN))
+        if layer_colors is None:
+            color, pattern_name = LAYER_STYLES.get(key, (DEFAULT_COLOR, DEFAULT_PATTERN))
+        else:
+            color, pattern_name = layer_colors.get(int(key[0]), DEFAULT_COLOR), None
         compound_path = Path.make_compound_path(*(Path(p) for p in polygons))
 
         tile_rows = PATTERN_TILES.get(pattern_name) if pattern_name else None
@@ -628,7 +653,7 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
                     compound_path,
                     facecolor="none",
                     edgecolor=color,
-                    linewidth=OUTLINE_LINEWIDTH,
+                    linewidth=OUTLINE_LINEWIDTH * pattern_scale,
                     linestyle="solid",
                 )
             )
@@ -640,7 +665,7 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
                     compound_path,
                     facecolor="none",
                     edgecolor=color,
-                    linewidth=OUTLINE_LINEWIDTH * 2,
+                    linewidth=OUTLINE_LINEWIDTH * 2 * pattern_scale,
                     linestyle="solid",
                 )
             )
@@ -653,13 +678,19 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
                     compound_path,
                     facecolor=color,
                     edgecolor=color,
-                    linewidth=OUTLINE_LINEWIDTH,
+                    linewidth=OUTLINE_LINEWIDTH * pattern_scale,
                     linestyle="solid",
                 )
             )
             continue
 
+        if fill_alpha:
+            # zorder 0 like the pattern image (patches default to 1): drawn just below its own pattern
+            ax.add_patch(PathPatch(compound_path, facecolor=color, edgecolor="none", alpha=fill_alpha, zorder=0))
+
         tile = np.array([[c == "*" for c in row] for row in tile_rows], dtype=bool)
+        if pattern_scale > 1:
+            tile = np.kron(tile, np.ones((pattern_scale, pattern_scale), dtype=bool))
         th, tw = tile.shape
         rgb = tuple(int(color[i : i + 2], 16) for i in (1, 3, 5))
         rgba_tile = np.zeros((th, tw, 4), dtype=np.uint8)
@@ -686,19 +717,31 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
                 compound_path,
                 facecolor="none",
                 edgecolor=color,
-                linewidth=OUTLINE_LINEWIDTH,
+                linewidth=OUTLINE_LINEWIDTH * pattern_scale,
                 linestyle="solid",
             )
         )
 
     import matplotlib.patheffects as patheffects
 
-    outline = [patheffects.withStroke(linewidth=3, foreground="black")]
+    # label size follows the image size (text about 3 % of the image width, at least
+    # 14 px), so labels stay readable when the PNG is shown smaller than it is
+    text_px = max(14.0, 0.03 * fig_width * dpi)
+    pt = 72.0 / dpi   # points per pixel
+    outline = [patheffects.withStroke(linewidth=0.25 * text_px * pt, foreground="black")]
+    cx = (x0 + x1) / 2
+    edge = text_px / px_per_um   # text height in layout units
     for x, y, text in labels or []:
-        ax.plot(x, y, marker="o", markersize=7, markerfacecolor="none", markeredgecolor="white",
-                markeredgewidth=1.5, path_effects=outline)
-        ax.annotate(text, (x, y), xytext=(6, 6), textcoords="offset points", color="white",
-                    fontsize=13, fontweight="bold", path_effects=outline)
+        ax.plot(x, y, marker="o", markersize=0.5 * text_px * pt, markerfacecolor="none",
+                markeredgecolor="white", markeredgewidth=0.12 * text_px * pt, path_effects=outline)
+        # text beside the marker, on the side toward the layout center, so labels of ports at
+        # the edge stay inside the image; vertically centered (labels of ports above each other
+        # don't collide), except within one text height of the top/bottom edge
+        dx = 0.5 * text_px * pt * (1 if x <= cx else -1)
+        va = "top" if y > y1 - edge else "bottom" if y < y0 + edge else "center"
+        ax.annotate(text, (x, y), xytext=(dx, 0), textcoords="offset points", color="white",
+                    fontsize=text_px * pt, fontweight="bold", path_effects=outline,
+                    ha="left" if x <= cx else "right", va=va)
 
     ax.set_xlim(x0, x1)
     ax.set_ylim(y0, y1)
@@ -726,6 +769,16 @@ def main():
         "--width", type=int, default=None, metavar="PIXELS",
         help="width of the --screenshot PNG in pixels (default 2400)",
     )
+    parser.add_argument(
+        "--pattern-scale", type=int, default=1, metavar="N",
+        help="draw fill pattern pixels as NxN blocks and outlines N times wider in the --screenshot "
+             "PNG, so patterns stay visible when the image is shown small (default 1: exact KLayout look)",
+    )
+    parser.add_argument(
+        "--fill-alpha", type=float, default=None, metavar="0..1",
+        help="add a solid fill with this opacity under the fill patterns of the --screenshot PNG, "
+             "so metal stays visible when the image is shown small (default: exact KLayout look)",
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args()
 
@@ -734,7 +787,8 @@ def main():
     print(f"Displaying cell '{cell.name}' from {args.gds_file}")
 
     if args.screenshot:
-        render_screenshot(cell, args.screenshot, width_px=args.width)
+        render_screenshot(cell, args.screenshot, width_px=args.width, pattern_scale=max(1, args.pattern_scale),
+                          fill_alpha=args.fill_alpha)
         print(f"Saved screenshot to {args.screenshot}")
         return
 
