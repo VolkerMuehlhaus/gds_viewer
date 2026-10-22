@@ -724,12 +724,24 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
 
     import matplotlib.patheffects as patheffects
 
-    outline = [patheffects.withStroke(linewidth=3, foreground="black")]
+    # label size follows the image size (text about 3 % of the image width, at least
+    # 14 px), so labels stay readable when the PNG is shown smaller than it is
+    text_px = max(14.0, 0.03 * fig_width * dpi)
+    pt = 72.0 / dpi   # points per pixel
+    outline = [patheffects.withStroke(linewidth=0.25 * text_px * pt, foreground="black")]
+    cx = (x0 + x1) / 2
+    edge = text_px / px_per_um   # text height in layout units
     for x, y, text in labels or []:
-        ax.plot(x, y, marker="o", markersize=7, markerfacecolor="none", markeredgecolor="white",
-                markeredgewidth=1.5, path_effects=outline)
-        ax.annotate(text, (x, y), xytext=(6, 6), textcoords="offset points", color="white",
-                    fontsize=13, fontweight="bold", path_effects=outline)
+        ax.plot(x, y, marker="o", markersize=0.5 * text_px * pt, markerfacecolor="none",
+                markeredgecolor="white", markeredgewidth=0.12 * text_px * pt, path_effects=outline)
+        # text beside the marker, on the side toward the layout center, so labels of ports at
+        # the edge stay inside the image; vertically centered (labels of ports above each other
+        # don't collide), except within one text height of the top/bottom edge
+        dx = 0.5 * text_px * pt * (1 if x <= cx else -1)
+        va = "top" if y > y1 - edge else "bottom" if y < y0 + edge else "center"
+        ax.annotate(text, (x, y), xytext=(dx, 0), textcoords="offset points", color="white",
+                    fontsize=text_px * pt, fontweight="bold", path_effects=outline,
+                    ha="left" if x <= cx else "right", va=va)
 
     ax.set_xlim(x0, x1)
     ax.set_ylim(y0, y1)
