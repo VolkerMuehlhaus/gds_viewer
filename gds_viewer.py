@@ -24,7 +24,7 @@ import sys
 
 import gdspy
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 # Hardcoded from sg13g2.lyp (IHP SG13G2 KLayout layer properties): (layer, datatype)
 # -> (fill-color, dither-pattern name). Values are copied verbatim from the .lyp's
@@ -564,7 +564,8 @@ def pick_cell(lib, cellname):
         except KeyError:
             names = ", ".join(sorted(lib.cells))
             sys.exit(f"Cell '{cellname}' not found. Available cells: {names}")
-    top_cells = lib.top_level()
+    # KLayout stores pcell/library context in an extra top-level cell; never pick that one
+    top_cells = [c for c in lib.top_level() if c.name != "$$$CONTEXT_INFO$$$"]
     if not top_cells:
         sys.exit("No top-level cell found in this GDS file.")
     return top_cells[0]
