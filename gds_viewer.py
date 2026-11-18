@@ -24,7 +24,7 @@ import sys
 
 import gdspy
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 # Hardcoded from sg13g2.lyp (IHP SG13G2 KLayout layer properties): (layer, datatype)
 # -> (fill-color, dither-pattern name). Values are copied verbatim from the .lyp's
@@ -571,9 +571,22 @@ def pick_cell(lib, cellname):
     return top_cells[0]
 
 
+def _polygons_and_box(cell):
+    """({(layer, datatype): [point arrays]}, ((x0, y0), (x1, y1))) of a cell with its whole hierarchy, paths as
+    polygons. cell: a gdspy cell, or a gdstk cell (gds_prepare_for_EM 1.8, gds2palace 0.11 and the MCP server read
+    layouts with gdstk). Told apart by their methods, so gdstk is not needed for gdspy cells."""
+    if hasattr(cell, "get_bounding_box"):          # gdspy
+        return cell.get_polygons(by_spec=True, depth=FULL_DEPTH), cell.get_bounding_box()
+    polygons_by_spec = {}
+    for p in cell.get_polygons(include_paths=True):     # gdstk: flattened, all levels
+        polygons_by_spec.setdefault((p.layer, p.datatype), []).append(p.points)
+    return polygons_by_spec, cell.bounding_box()
+
+
 def render_screenshot(cell, output_path, background="#000000", width_px=None, labels=None,
                       outline_layers=None, layer_colors=None, pattern_scale=1, fill_alpha=None):
     """Render the cell's full geometry (no GUI window needed) and save it as PNG.
+    cell: a gdspy or a gdstk cell.
 
     Uses the exact PATTERN_TILES bitmaps (not gdspy's 10-pattern GUI palette),
     so this is a pixel-accurate reproduction of sg13g2.lyp's fill patterns.
@@ -605,9 +618,7 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
     from matplotlib.path import Path
     from matplotlib.patches import PathPatch
 
-    polygons_by_spec = cell.get_polygons(by_spec=True, depth=FULL_DEPTH)
-
-    (x0, y0), (x1, y1) = cell.get_bounding_box()
+    polygons_by_spec, ((x0, y0), (x1, y1)) = _polygons_and_box(cell)
     width, height = x1 - x0, y1 - y0
     # figure with the layout's own aspect ratio, so there are no empty bands
     # around it; very tall layouts get a narrower figure instead of a taller one
