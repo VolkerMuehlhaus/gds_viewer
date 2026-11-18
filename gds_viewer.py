@@ -22,7 +22,6 @@
 import argparse
 import sys
 
-import gdspy
 
 __version__ = "0.3.0"
 
@@ -793,6 +792,10 @@ def main():
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args()
+
+    # gdspy only here, for the command line and its interactive window (gdspy's LayoutViewer): importing
+    # gds_viewer for render_screenshot() does not need gdspy (the gds2palace MCP server passes gdstk cells)
+    import gdspy
 
     lib = gdspy.GdsLibrary(infile=args.gds_file)
     cell = pick_cell(lib, args.cellname)
