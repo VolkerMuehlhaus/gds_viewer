@@ -9,6 +9,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import gdstk  # noqa: E402
+import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -94,3 +95,25 @@ def test_command_line_screenshot_without_gdspy(tmp_path):
     assert run.returncode == 0, run.stderr
     assert "Displaying cell 'DESIGN'" in run.stdout
     assert png.stat().st_size > 0
+
+
+def test_layers_without_style_do_not_hide_the_circuit(tmp_path):
+    """A helper layer without SG13G2 style (here 800/0, a box over the circuit) is an outline, not a grey fill."""
+    lib = layout()
+    lib["DESIGN"].add(gdstk.rectangle((10, 10), (190, 90), layer=800))
+    cell = gds_viewer.pick_cell(lib, None)
+    window = gds_viewer.LayoutWindow(cell)
+    patch = window.layers[(800, 0)]["artists"][0]
+    assert patch.get_facecolor()[3] == 0 and patch.get_edgecolor()[3] > 0
+    assert gds_viewer._layer_style((800, 0)) == (gds_viewer.DEFAULT_COLOR, "helper", None)
+    assert gds_viewer._layer_style((800, 0), {800: "#ff0000"})[1] == "solid"
+
+    # the screenshot: Metal1's pattern shows through in the middle of the box
+    from matplotlib.image import imread
+    png = tmp_path / "shot.png"
+    gds_viewer.render_screenshot(cell, str(png), width_px=400)
+    image = imread(str(png))
+    h, w = image.shape[:2]
+    middle = image[int(h * 0.15):int(h * 0.25), int(w * 0.05):int(w * 0.15), :3]     # Metal1 only, inside 800/0
+    grey = np.array([0xa0, 0xa0, 0xa0]) / 255
+    assert not np.all(np.abs(middle - grey).max(axis=2) < 0.02)

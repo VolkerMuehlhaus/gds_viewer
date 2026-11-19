@@ -510,7 +510,7 @@ PATTERN_TILES = {
 }
 
 DEFAULT_COLOR = "#a0a0a0"
-DEFAULT_PATTERN = None  # solid, for any layer/datatype not in sg13g2.lyp
+DEFAULT_PATTERN = None  # for layer_colors: solid fill
 FULL_DEPTH = 32  # expand all reference levels instead of drawing name-labeled boxes
 OUTLINE_LINEWIDTH = 0.5  # --screenshot: polygon outline width, in points
 
@@ -568,9 +568,12 @@ def _draw_order(keys, layer_colors=None):
 
 def _layer_style(key, layer_colors=None):
     """(color, kind, tile rows) of a layer: kind "outline" (a pattern without fill, e.g. pin and label purposes),
-    "solid" (layers without SG13G2 style, and all of layer_colors) or "pattern" (tile rows of PATTERN_TILES)."""
+    "helper" (a layer without SG13G2 style, e.g. port, region or marker layers: a wider outline in DEFAULT_COLOR,
+    so it doesn't hide the layers below), "solid" (all of layer_colors) or "pattern" (tile rows of PATTERN_TILES)."""
     if layer_colors is None:
-        color, pattern_name = LAYER_STYLES.get(key, (DEFAULT_COLOR, DEFAULT_PATTERN))
+        if key not in LAYER_STYLES:
+            return DEFAULT_COLOR, "helper", None
+        color, pattern_name = LAYER_STYLES[key]
     else:
         color, pattern_name = layer_colors.get(int(key[0]), DEFAULT_COLOR), None
     tile_rows = PATTERN_TILES.get(pattern_name) if pattern_name else None
@@ -626,6 +629,8 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
     with a marker, e.g. to show port locations.
     outline_layers: optional set of layer numbers drawn as outlines only, e.g.
     helper layers without SG13G2 style that would otherwise hide other layers.
+    Layers without SG13G2 style are drawn as outlines in DEFAULT_COLOR, like
+    outline_layers.
     layer_colors: optional {layer number: color} for other technologies than
     SG13G2. The SG13G2 styles are then not used: each listed layer is a solid
     fill in its color ("#rrggbb", or "#rrggbbaa" with transparency), drawn in
@@ -675,7 +680,7 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
         if kind == "outline":
             ax.add_patch(PathPatch(compound_path, facecolor="none", edgecolor=color, linewidth=linewidth))
             continue
-        if key[0] in (outline_layers or ()):
+        if kind == "helper" or key[0] in (outline_layers or ()):
             ax.add_patch(PathPatch(compound_path, facecolor="none", edgecolor=color, linewidth=2 * linewidth))
             continue
         if kind == "solid":
@@ -779,9 +784,9 @@ class LayoutWindow:
                      "visible": key[1] not in HIDDEN_DATATYPES}
             if key in polygons_by_spec:
                 path = Path.make_compound_path(*(Path(p) for p in polygons_by_spec[key]))
-                face = color if kind == "solid" else "none"
-                entry["artists"].append(ax.add_patch(PathPatch(path, facecolor=face, edgecolor=color,
-                                                               linewidth=OUTLINE_LINEWIDTH)))
+                width = OUTLINE_LINEWIDTH * (2 if kind == "helper" else 1)
+                entry["artists"].append(ax.add_patch(PathPatch(path, facecolor="none", edgecolor=color,
+                                                               linewidth=width)))
                 if kind == "pattern":
                     entry["path"], entry["tile"] = path, _pattern_tile(color, tile_rows)
                     verts = path.vertices
