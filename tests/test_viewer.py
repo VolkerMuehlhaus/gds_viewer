@@ -66,7 +66,8 @@ def test_window_layers_and_pattern_redraw():
     window._redraw_patterns()
     image = metal1["image"]
     x0, x1, y0, y1 = image.get_extent()
-    assert x0 <= 90 and x1 >= 100 and x1 - x0 < 11
+    (vx0, vx1) = window.ax.get_xlim()                            # 90..100, widened to the window's shape
+    assert x0 <= vx0 and x1 >= vx1 and x1 - x0 < (vx1 - vx0) + 1
     tile_h, tile_w = metal1["tile"].shape[:2]
     px_per_um = image.get_array().shape[1] / (x1 - x0)
     assert image.get_array().shape[1] < 2 * full_width
@@ -117,3 +118,26 @@ def test_layers_without_style_do_not_hide_the_circuit(tmp_path):
     middle = image[int(h * 0.15):int(h * 0.25), int(w * 0.05):int(w * 0.15), :3]     # Metal1 only, inside 800/0
     grey = np.array([0xa0, 0xa0, 0xa0]) / 255
     assert not np.all(np.abs(middle - grey).max(axis=2) < 0.02)
+
+
+def test_zoom_box_of_another_shape_fills_the_drawing_area():
+    """A tall zoom box in a wide window: the drawing area keeps its size (the shown range gets wider), and the
+    patterns cover the whole shown range. Drawing again does not start another pattern redraw."""
+    window = gds_viewer.LayoutWindow(gds_viewer.pick_cell(layout(), None))
+    window.fig.canvas.draw()
+    full_width = window.ax.get_window_extent().width
+    window.ax.set_xlim(95, 105)
+    window.ax.set_ylim(0, 100)
+    window._redraw_patterns()
+    window.fig.canvas.draw()
+    assert abs(window.ax.get_window_extent().width - full_width) < 1
+    (vx0, vx1), (vy0, vy1) = window.ax.get_xlim(), window.ax.get_ylim()
+    assert vx1 - vx0 > 50                                      # widened to the window's shape
+    x0, x1, y0, y1 = window.layers[(8, 0)]["image"].get_extent()
+    assert x0 <= max(vx0, 0) + 1e-6 and x1 >= min(vx1, 200) - 1e-6   # Metal1 (0..200) patterned wherever shown
+
+    starts = []
+    window._timer.start = lambda: starts.append(1)
+    window.fig.canvas.draw()
+    window.fig.canvas.draw()
+    assert starts == []

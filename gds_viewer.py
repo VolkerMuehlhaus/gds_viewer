@@ -736,6 +736,19 @@ def layer_label(key):
     return f"{name}.{PURPOSE_NAMES.get(datatype, datatype)} {layer}/{datatype}"
 
 
+def _quiet_aspect_warning():
+    """matplotlib logs "Ignoring fixed x limits to fulfill fixed data aspect ..." whenever a zoom range is widened to
+    the window's shape: intended in LayoutWindow, so not shown."""
+    import logging
+
+    logger = logging.getLogger("matplotlib.axes._base")
+    if not any(getattr(f, "_gds_viewer", False) for f in logger.filters):
+        def keep(record):
+            return "to fulfill fixed data aspect" not in record.getMessage()
+        keep._gds_viewer = True
+        logger.addFilter(keep)
+
+
 class LayoutWindow:
     """Interactive matplotlib window of a gdstk cell with its whole hierarchy, in the sg13g2.lyp colors and the
     exact fill patterns of render_screenshot().
@@ -770,7 +783,10 @@ class LayoutWindow:
             fig.canvas.manager.set_window_title(title or f"gds_viewer: {cell.name}")
         self.ax = ax = fig.add_axes((0.0, 0.0, 1.0 - self.LIST_WIDTH, 1.0))
         ax.set_facecolor(background)
-        ax.set_aspect("equal")
+        # equal scales by widening the shown range, not by shrinking the drawing area: a zoom box of another shape
+        # than the window would otherwise leave black bands beside a narrow drawing
+        ax.set_aspect("equal", adjustable="datalim")
+        _quiet_aspect_warning()
         ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
         for spine in ax.spines.values():
             spine.set_visible(False)
@@ -817,6 +833,7 @@ class LayoutWindow:
         self._keys_in_list = keys
         self.checks.on_clicked(self._on_check)
 
+        self._drawn_view = None    # (x limits, y limits, axes size in pixels) the patterns were last drawn for
         self._timer = fig.canvas.new_timer(interval=self.REDRAW_DELAY_MS)
         self._timer.single_shot = True
         self._timer.add_callback(self._redraw_patterns)
@@ -850,7 +867,15 @@ class LayoutWindow:
         self.ax.set_ylim(y - (y - vy0) * factor, y + (vy1 - y) * factor)
         self.fig.canvas.draw_idle()
 
+    def _view(self):
+        extent = self.ax.get_window_extent()
+        return self.ax.get_xlim(), self.ax.get_ylim(), (round(extent.width), round(extent.height))
+
     def _schedule(self, *_):
+        # drawing applies the equal aspect, which sets the limits again (unchanged once the patterns match them):
+        # no redraw then, or each redraw would start the next one
+        if self._view() == self._drawn_view:
+            return
         self._timer.stop()
         self._timer.start()
 
@@ -860,6 +885,7 @@ class LayoutWindow:
         panning."""
         import math
 
+        self.ax.apply_aspect()     # the range that will be shown: widened to the window's shape
         (vx0, vx1), (vy0, vy1) = self.ax.get_xlim(), self.ax.get_ylim()
         extent = self.ax.get_window_extent()
         if vx1 <= vx0 or vy1 <= vy0 or extent.width <= 0 or extent.height <= 0:
@@ -886,6 +912,7 @@ class LayoutWindow:
         # images were added after the patches; keep the view the user chose (imshow would autoscale)
         self.ax.set_xlim(vx0, vx1, emit=False)
         self.ax.set_ylim(vy0, vy1, emit=False)
+        self._drawn_view = self._view()
         self.fig.canvas.draw_idle()
 
 
