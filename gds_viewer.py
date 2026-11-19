@@ -17,7 +17,7 @@
 #
 ########################################################################
 
-"""Command-line GDSII layout viewer, using gdspy, with IHP SG13G2 layer styling."""
+"""GDSII layout viewer (window and headless PNG), using gdstk and matplotlib, with IHP SG13G2 layer styling."""
 
 import argparse
 import sys
@@ -408,6 +408,37 @@ LAYER_STYLES = {
     (257, 0): ("#ff00ff", "I1"),  # isoNWell.drawing
 }
 
+# Layer and purpose names from sg13g2.lyp, for the layer list of the interactive window ("Metal1.drawing").
+LAYER_NAMES = {
+    1: "Activ", 3: "BiWind", 5: "GatPoly", 6: "Cont", 7: "nSD", 8: "Metal1", 9: "Passiv", 10: "Metal2",
+    13: "BasPoly", 14: "pSD", 15: "NLDB", 16: "DigiBnd", 19: "Via1", 20: "BackMetal1", 23: "BackPassiv", 24: "RES",
+    25: "SRAM", 26: "TRANS", 27: "IND", 28: "SalBlock", 29: "Via2", 30: "Metal3", 31: "NWell", 32: "nBuLay",
+    33: "EmWind", 35: "DeepCo", 36: "MIM", 39: "EdgeSeal", 40: "Substrate", 41: "dfpad", 44: "ThickGateOx",
+    45: "PLDB", 46: "PWell", 48: "IC", 49: "Via3", 50: "Metal4", 51: "HeatTrans", 52: "HeatRes", 54: "FBE",
+    55: "EmPoly", 60: "DigiSub", 62: "NoDRC", 63: "TEXT", 66: "Via4", 67: "Metal5", 68: "RadHard", 69: "MemCap",
+    70: "Varicap", 72: "IntBondVia", 73: "IntBondMet", 74: "DevBondVia", 75: "DevBondMet", 76: "DevTrench",
+    77: "Redist", 78: "GraphBot", 79: "GraphTop", 83: "AntVia1", 84: "AntMetal2", 85: "GraphCont", 86: "SiWG",
+    87: "SiGrating", 88: "SiNGrating", 89: "GraphPas", 90: "EmWind3", 91: "EmWiHV3", 92: "RedBuLay", 93: "SMOS",
+    97: "GraphPad", 98: "Polimide", 99: "Recog", 101: "ColOpen", 109: "GraphMetal1", 110: "GraphMet1L",
+    111: "EXTBlock", 112: "NLDD", 113: "PLDD", 114: "NExt", 115: "PExt", 116: "NExtHV", 117: "PExtHV",
+    118: "GraphGate", 119: "SiNWG", 124: "MEMPAD", 125: "TopVia1", 126: "TopMetal1", 127: "INLDPWL", 128: "PolyRes",
+    129: "Vmim", 131: "nBuLayCut", 132: "AntMetal1", 133: "TopVia2", 134: "TopMetal2", 135: "SNSRing",
+    136: "Sensor", 137: "SNSArms", 138: "SNSCMOSVia", 139: "ColWind", 142: "FLM", 143: "HafniumOx", 145: "MEMVia",
+    146: "ThinFilmRes", 147: "RFMEM", 148: "NoRCX", 149: "SNSBotVia", 151: "SNSTopVia", 152: "DeepVia",
+    153: "FGEtch", 154: "CtrGat", 155: "FGImp", 156: "EmWiHV", 157: "LBE", 159: "AlCuStop", 160: "NoMetFiller",
+    189: "prBoundary", 190: "Exchange0", 191: "Exchange1", 192: "Exchange2", 193: "Exchange3", 194: "Exchange4",
+    257: "isoNWell",
+}
+
+PURPOSE_NAMES = {
+    0: "drawing", 1: "label", 2: "pin", 3: "net", 4: "boundary", 10: "drawing0", 19: "lvs", 20: "mask", 21: "block",
+    22: "filler", 23: "nofill", 24: "slit", 25: "text", 26: "OPC", 27: "iOPC", 28: "noqrc", 29: "res", 30: "esd",
+    31: "diode", 32: "tsv", 33: "iprobe", 34: "diffprb", 35: "pillar", 36: "sbump", 37: "otp", 38: "pdiode",
+    39: "mom", 40: "pdl", 41: "m2m3", 42: "m2m4", 43: "m2m5", 44: "m2tm1", 45: "m2tm2", 46: "m3m4", 47: "m3m5",
+    48: "m3tm1", 49: "m3tm2", 50: "m4m5", 51: "m4tm1", 52: "m4tm2", 53: "m5tm1", 54: "m5tm2", 55: "tm1tm2",
+    100: "pcm", 123: "m1sub", 124: "m2sub", 125: "m3sub", 126: "m4sub", 127: "m5sub", 300: "tm1sub", 301: "tm2sub",
+}
+
 # Exact per-pattern bitmaps for every dither-pattern name used in sg13g2.lyp.
 #
 # KLayout ships this technology's dither-pattern definitions internally (not in
@@ -483,71 +514,7 @@ DEFAULT_PATTERN = None  # solid, for any layer/datatype not in sg13g2.lyp
 FULL_DEPTH = 32  # expand all reference levels instead of drawing name-labeled boxes
 OUTLINE_LINEWIDTH = 0.5  # --screenshot: polygon outline width, in points
 
-# For the interactive GUI: gdspy's Tkinter viewer only supports 10 built-in fill
-# patterns (indices 0-9: 0/1/2 dense hatches, 3/4/6 sparser line/cross hatches,
-# 5 dense cross-hatch, 7 sparse dots, 8 solid, 9 invisible/no-fill), so the exact
-# PATTERN_TILES bitmaps can't be used there directly. Each pattern name is instead
-# mapped to whichever of those 10 gdspy patterns is the closest visual match, by
-# comparing pixel density and hatch/grid orientation against PATTERN_TILES.
-PATTERN_TO_GDSPY_INDEX = {
-    "C0": 9,
-    "C1": 2,
-    "C2": 3,
-    "C3": 5,
-    "C4": 6,
-    "C5": 6,
-    "C6": 3,
-    "C7": 6,
-    "C8": 6,
-    "C9": 6,
-    "C10": 6,
-    "C11": 9,
-    "C12": 6,
-    "C13": 4,
-    "C14": 5,
-    "C15": 2,
-    "C16": 2,
-    "C17": 2,
-    "C18": 9,
-    "C19": 2,
-    "C20": 2,
-    "C21": 2,
-    "C22": 1,
-    "C23": 1,
-    "C24": 5,
-    "C25": 1,
-    "C26": 1,
-    "C27": 1,
-    "C28": 2,
-    "C29": 2,
-    "C30": 1,
-    "C31": 1,
-    "C32": 1,
-    "C34": 2,
-    "C35": 6,
-    "C36": 6,
-    "C37": 6,
-    "C38": 1,
-    "C39": 1,
-    "C40": 4,
-    "C41": 3,
-    "C42": 2,
-    "C43": 1,
-    "C44": 2,
-    "C45": 3,
-    "C46": 2,
-    "C47": 6,
-    "C48": 2,
-    "C49": 3,
-    "C50": 5,
-    "C51": 6,
-    "C52": 6,
-    "C53": 6,
-    "I1": 9,
-}
-DEFAULT_GDSPY_PATTERN = 8  # solid
-
-# Purpose (datatype) numbers to hide from both the GUI and --screenshot, across
+# Purpose (datatype) numbers hidden in --screenshot and switched off at first in the window, across
 # every layer. Verified against LAYER_STYLES above (derived straight from
 # sg13g2.lyp) rather than trusted by name alone: sibling repo gds_prepare_for_EM
 # lists these same 4 purposes as [20, 22, 23, 32], but per the real .lyp, 20 is
@@ -557,23 +524,30 @@ HIDDEN_DATATYPES = {21, 22, 23, 28}  # block, filler, nofill, noqrc
 
 
 def pick_cell(lib, cellname):
+    """The cell to show of a gdstk library: the cell called cellname, else the top-level cell with the largest
+    bounding box, never KLayout's $$$CONTEXT_INFO$$$ (or another $$$ cell). The same rule as gds2palace's
+    select_design_cell() and gds_prepare_for_EM, so the viewer shows the cell that the EM tools read: keep in sync."""
+    import gdstk
+
+    cells = {c.name: c for c in lib.cells if not isinstance(c, gdstk.RawCell)}
     if cellname is not None:
-        try:
-            return lib.cells[cellname]
-        except KeyError:
-            names = ", ".join(sorted(lib.cells))
-            sys.exit(f"Cell '{cellname}' not found. Available cells: {names}")
-    # KLayout stores pcell/library context in an extra top-level cell; never pick that one
-    top_cells = [c for c in lib.top_level() if c.name != "$$$CONTEXT_INFO$$$"]
+        if cellname not in cells:
+            sys.exit(f"Cell '{cellname}' not found. Available cells: {', '.join(sorted(cells))}")
+        return cells[cellname]
+    top_cells = [c for c in lib.top_level() if not isinstance(c, gdstk.RawCell) and not c.name.startswith("$$$")]
     if not top_cells:
         sys.exit("No top-level cell found in this GDS file.")
-    return top_cells[0]
+
+    def area(cell):
+        box = cell.bounding_box()
+        return 0 if box is None else (box[1][0] - box[0][0]) * (box[1][1] - box[0][1])
+    return max(top_cells, key=area)
 
 
 def _polygons_and_box(cell):
     """({(layer, datatype): [point arrays]}, ((x0, y0), (x1, y1))) of a cell with its whole hierarchy, paths as
-    polygons. cell: a gdspy cell, or a gdstk cell (gds_prepare_for_EM 1.8, gds2palace 0.11 and the MCP server read
-    layouts with gdstk). Told apart by their methods, so gdstk is not needed for gdspy cells."""
+    polygons. cell: a gdstk cell, or a gdspy cell (render_screenshot still takes those). Told apart by their
+    methods, so neither package is imported here."""
     if hasattr(cell, "get_bounding_box"):          # gdspy
         return cell.get_polygons(by_spec=True, depth=FULL_DEPTH), cell.get_bounding_box()
     polygons_by_spec = {}
@@ -582,13 +556,69 @@ def _polygons_and_box(cell):
     return polygons_by_spec, cell.bounding_box()
 
 
+def _draw_order(keys, layer_colors=None):
+    """(layer, datatype) keys bottom first. SG13G2: the order of sg13g2.lyp, so layers stack as in KLayout (not in
+    the GDS stream's order), unknown layers on top. With layer_colors (other technologies): unlisted layers first,
+    then the listed ones in the order of the dict."""
+    if layer_colors is None:
+        return [k for k in LAYER_STYLES if k in keys] + [k for k in keys if k not in LAYER_STYLES]
+    rank = {int(layer): i for i, layer in enumerate(layer_colors)}
+    return sorted(keys, key=lambda k: (rank.get(int(k[0]), -1), k))
+
+
+def _layer_style(key, layer_colors=None):
+    """(color, kind, tile rows) of a layer: kind "outline" (a pattern without fill, e.g. pin and label purposes),
+    "solid" (layers without SG13G2 style, and all of layer_colors) or "pattern" (tile rows of PATTERN_TILES)."""
+    if layer_colors is None:
+        color, pattern_name = LAYER_STYLES.get(key, (DEFAULT_COLOR, DEFAULT_PATTERN))
+    else:
+        color, pattern_name = layer_colors.get(int(key[0]), DEFAULT_COLOR), None
+    tile_rows = PATTERN_TILES.get(pattern_name) if pattern_name else None
+    if pattern_name is not None and tile_rows is None and pattern_name in PATTERN_TILES:
+        return color, "outline", None
+    if tile_rows is None:
+        return color, "solid", None
+    return color, "pattern", tile_rows
+
+
+def _pattern_tile(color, tile_rows, pattern_scale=1):
+    """RGBA uint8 array of one pattern tile: the layer color where the pattern is set, transparent elsewhere."""
+    import numpy as np
+
+    tile = np.array([[c == "*" for c in row] for row in tile_rows], dtype=bool)
+    if pattern_scale > 1:
+        tile = np.kron(tile, np.ones((pattern_scale, pattern_scale), dtype=bool))
+    rgb = tuple(int(color[i : i + 2], 16) for i in (1, 3, 5))
+    rgba_tile = np.zeros((*tile.shape, 4), dtype=np.uint8)
+    rgba_tile[tile] = (*rgb, 255)
+    return rgba_tile
+
+
+def _pattern_image(ax, rgba_tile, compound_path, x0, y0, out_w, out_h, px_per_um):
+    """The pattern, one tile pixel per output pixel, as an image of out_w x out_h pixels from (x0, y0) up,
+    clipped to the layer's shapes."""
+    import numpy as np
+    from matplotlib.patches import PathPatch
+
+    th, tw = rgba_tile.shape[:2]
+    big = np.tile(rgba_tile, (out_h // th + 2, out_w // tw + 2, 1))[:out_h, :out_w]
+    im = ax.imshow(
+        big,
+        extent=(x0, x0 + out_w / px_per_um, y0, y0 + out_h / px_per_um),
+        origin="upper",
+        interpolation="nearest",
+    )
+    im.set_clip_path(PathPatch(compound_path, transform=ax.transData))
+    return im
+
+
 def render_screenshot(cell, output_path, background="#000000", width_px=None, labels=None,
                       outline_layers=None, layer_colors=None, pattern_scale=1, fill_alpha=None):
     """Render the cell's full geometry (no GUI window needed) and save it as PNG.
-    cell: a gdspy or a gdstk cell.
+    cell: a gdstk cell (or a gdspy cell).
 
-    Uses the exact PATTERN_TILES bitmaps (not gdspy's 10-pattern GUI palette),
-    so this is a pixel-accurate reproduction of sg13g2.lyp's fill patterns.
+    Uses the exact PATTERN_TILES bitmaps, so this is a pixel-accurate
+    reproduction of sg13g2.lyp's fill patterns.
 
     output_path: file name or binary file object.
     width_px: image width in pixels (default 2400).
@@ -613,7 +643,6 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    import numpy as np
     from matplotlib.path import Path
     from matplotlib.patches import PathPatch
 
@@ -636,102 +665,32 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
     # (millimeters, not microns) and wastes memory on chip-scale ones.
     px_per_um = (fig_width * dpi) / width
 
-    # Draw in the same order sg13g2.lyp lists its layers, so layers stack the same
-    # way they do in KLayout, instead of gdspy's arbitrary GDS-stream element order.
-    # With layer_colors (other technologies), draw in that order instead, all solid.
-    if layer_colors is None:
-        ordered_keys = [k for k in LAYER_STYLES if k in polygons_by_spec]
-        ordered_keys += [k for k in polygons_by_spec if k not in LAYER_STYLES]
-    else:
-        rank = {int(layer): i for i, layer in enumerate(layer_colors)}
-        ordered_keys = sorted(polygons_by_spec, key=lambda k: (rank.get(int(k[0]), -1), k))
-
-    for key in ordered_keys:
+    for key in _draw_order(polygons_by_spec, layer_colors):
         if layer_colors is None and key[1] in HIDDEN_DATATYPES:
             continue
-        polygons = polygons_by_spec[key]
-        if layer_colors is None:
-            color, pattern_name = LAYER_STYLES.get(key, (DEFAULT_COLOR, DEFAULT_PATTERN))
-        else:
-            color, pattern_name = layer_colors.get(int(key[0]), DEFAULT_COLOR), None
-        compound_path = Path.make_compound_path(*(Path(p) for p in polygons))
+        color, kind, tile_rows = _layer_style(key, layer_colors)
+        compound_path = Path.make_compound_path(*(Path(p) for p in polygons_by_spec[key]))
+        linewidth = OUTLINE_LINEWIDTH * pattern_scale
 
-        tile_rows = PATTERN_TILES.get(pattern_name) if pattern_name else None
-        if pattern_name is not None and tile_rows is None and pattern_name in PATTERN_TILES:
-            # A pattern that resolves to "no fill" (e.g. label/pin outline layers).
-            ax.add_patch(
-                PathPatch(
-                    compound_path,
-                    facecolor="none",
-                    edgecolor=color,
-                    linewidth=OUTLINE_LINEWIDTH * pattern_scale,
-                    linestyle="solid",
-                )
-            )
+        if kind == "outline":
+            ax.add_patch(PathPatch(compound_path, facecolor="none", edgecolor=color, linewidth=linewidth))
             continue
-
         if key[0] in (outline_layers or ()):
-            ax.add_patch(
-                PathPatch(
-                    compound_path,
-                    facecolor="none",
-                    edgecolor=color,
-                    linewidth=OUTLINE_LINEWIDTH * 2 * pattern_scale,
-                    linestyle="solid",
-                )
-            )
+            ax.add_patch(PathPatch(compound_path, facecolor="none", edgecolor=color, linewidth=2 * linewidth))
             continue
-
-        if tile_rows is None:
-            # DEFAULT_PATTERN (unknown layer) -> plain solid fill.
-            ax.add_patch(
-                PathPatch(
-                    compound_path,
-                    facecolor=color,
-                    edgecolor=color,
-                    linewidth=OUTLINE_LINEWIDTH * pattern_scale,
-                    linestyle="solid",
-                )
-            )
+        if kind == "solid":
+            ax.add_patch(PathPatch(compound_path, facecolor=color, edgecolor=color, linewidth=linewidth))
             continue
 
         if fill_alpha:
             # zorder 0 like the pattern image (patches default to 1): drawn just below its own pattern
             ax.add_patch(PathPatch(compound_path, facecolor=color, edgecolor="none", alpha=fill_alpha, zorder=0))
-
-        tile = np.array([[c == "*" for c in row] for row in tile_rows], dtype=bool)
-        if pattern_scale > 1:
-            tile = np.kron(tile, np.ones((pattern_scale, pattern_scale), dtype=bool))
-        th, tw = tile.shape
-        rgb = tuple(int(color[i : i + 2], 16) for i in (1, 3, 5))
-        rgba_tile = np.zeros((th, tw, 4), dtype=np.uint8)
-        rgba_tile[tile] = (*rgb, 255)
-
         verts = compound_path.vertices
         bx0, by0 = verts.min(axis=0)
         bx1, by1 = verts.max(axis=0)
-        out_w = max(1, int((bx1 - bx0) * px_per_um))
-        out_h = max(1, int((by1 - by0) * px_per_um))
-        reps_x = out_w // tw + 2
-        reps_y = out_h // th + 2
-        big = np.tile(rgba_tile, (reps_y, reps_x, 1))[:out_h, :out_w]
-
-        im = ax.imshow(
-            big,
-            extent=(bx0, bx0 + out_w / px_per_um, by0, by0 + out_h / px_per_um),
-            origin="upper",
-            interpolation="nearest",
-        )
-        im.set_clip_path(PathPatch(compound_path, transform=ax.transData))
-        ax.add_patch(
-            PathPatch(
-                compound_path,
-                facecolor="none",
-                edgecolor=color,
-                linewidth=OUTLINE_LINEWIDTH * pattern_scale,
-                linestyle="solid",
-            )
-        )
+        _pattern_image(ax, _pattern_tile(color, tile_rows, pattern_scale), compound_path, bx0, by0,
+                       max(1, int((bx1 - bx0) * px_per_um)), max(1, int((by1 - by0) * px_per_um)), px_per_um)
+        ax.add_patch(PathPatch(compound_path, facecolor="none", edgecolor=color, linewidth=linewidth))
 
     import matplotlib.patheffects as patheffects
 
@@ -763,18 +722,190 @@ def render_screenshot(cell, output_path, background="#000000", width_px=None, la
     plt.close(fig)
 
 
+def layer_label(key):
+    """Name of a (layer, datatype) in the layer list, e.g. "Metal1.drawing 8/0"; numbers only for unknown ones."""
+    layer, datatype = key
+    name = LAYER_NAMES.get(layer)
+    if name is None:
+        return f"{layer}/{datatype}"
+    return f"{name}.{PURPOSE_NAMES.get(datatype, datatype)} {layer}/{datatype}"
+
+
+class LayoutWindow:
+    """Interactive matplotlib window of a gdstk cell with its whole hierarchy, in the sg13g2.lyp colors and the
+    exact fill patterns of render_screenshot().
+
+    Pan and zoom with matplotlib's toolbar (or keys p and o, h for the whole layout, scroll wheel zooms at the
+    cursor), the cursor position in um at the bottom. The layer list on the right switches layers on and off;
+    purposes in HIDDEN_DATATYPES (block, filler, nofill, noqrc) start off. GDS texts are shown with their layer.
+
+    The fill patterns are redrawn after each pan or zoom, at the screen's resolution, so they keep their
+    KLayout look at every zoom level.
+    """
+
+    LIST_WIDTH = 0.22          # part of the window width taken by the layer list
+    REDRAW_DELAY_MS = 150      # patterns are redrawn this long after the last pan/zoom step
+
+    def __init__(self, cell, background="#000000", title=None):
+        import matplotlib.pyplot as plt
+        from matplotlib.path import Path
+        from matplotlib.patches import PathPatch
+        from matplotlib.widgets import CheckButtons
+
+        polygons_by_spec, box = _polygons_and_box(cell)
+        texts = {}
+        for label in cell.get_labels():
+            texts.setdefault((label.layer, label.texttype), []).append(label)
+        if box is None:
+            raise ValueError(f"cell {cell.name} has no shapes")
+        (x0, y0), (x1, y1) = box
+
+        self.fig = fig = plt.figure(figsize=(13, 8), facecolor=background)
+        if fig.canvas.manager is not None:
+            fig.canvas.manager.set_window_title(title or f"gds_viewer: {cell.name}")
+        self.ax = ax = fig.add_axes((0.0, 0.0, 1.0 - self.LIST_WIDTH, 1.0))
+        ax.set_facecolor(background)
+        ax.set_aspect("equal")
+        ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        ax.format_coord = lambda x, y: f"x = {x:.3f} um   y = {y:.3f} um"
+
+        self.layers = {}       # (layer, datatype) -> dict of its style and artists
+        text_size = 8
+        for key in _draw_order(set(polygons_by_spec) | set(texts)):
+            color, kind, tile_rows = _layer_style(key)
+            entry = {"color": color, "artists": [], "path": None, "tile": None, "image": None,
+                     "visible": key[1] not in HIDDEN_DATATYPES}
+            if key in polygons_by_spec:
+                path = Path.make_compound_path(*(Path(p) for p in polygons_by_spec[key]))
+                face = color if kind == "solid" else "none"
+                entry["artists"].append(ax.add_patch(PathPatch(path, facecolor=face, edgecolor=color,
+                                                               linewidth=OUTLINE_LINEWIDTH)))
+                if kind == "pattern":
+                    entry["path"], entry["tile"] = path, _pattern_tile(color, tile_rows)
+                    verts = path.vertices
+                    entry["bounds"] = (*verts.min(axis=0), *verts.max(axis=0))
+            for label in texts.get(key, ()):
+                entry["artists"].append(ax.text(*label.origin, label.text, color=color, fontsize=text_size,
+                                                ha="center", va="center", clip_on=True))
+            for artist in entry["artists"]:
+                artist.set_visible(entry["visible"])
+            self.layers[key] = entry
+
+        pad = 0.02 * max(x1 - x0, y1 - y0)
+        ax.set_xlim(x0 - pad, x1 + pad)
+        ax.set_ylim(y0 - pad, y1 + pad)
+
+        # the layer list: one check box per layer, in the layer's color, top = drawn last (as in KLayout's list)
+        keys = list(reversed(list(self.layers)))
+        self.list_ax = fig.add_axes((1.0 - self.LIST_WIDTH, 0.0, self.LIST_WIDTH, 1.0))
+        self.list_ax.set_facecolor("#1e1e1e")
+        colors = [self.layers[k]["color"] for k in keys]
+        size = max(5.0, min(9.0, 520.0 / max(1, len(keys))))
+        self.checks = CheckButtons(
+            self.list_ax, [layer_label(k) for k in keys], [self.layers[k]["visible"] for k in keys],
+            label_props={"color": colors, "fontsize": [size] * len(keys)},
+            frame_props={"edgecolor": colors, "facecolor": "none"},
+            check_props={"facecolor": colors},
+        )
+        self._keys_in_list = keys
+        self.checks.on_clicked(self._on_check)
+
+        self._timer = fig.canvas.new_timer(interval=self.REDRAW_DELAY_MS)
+        self._timer.single_shot = True
+        self._timer.add_callback(self._redraw_patterns)
+        ax.callbacks.connect("xlim_changed", self._schedule)
+        ax.callbacks.connect("ylim_changed", self._schedule)
+        fig.canvas.mpl_connect("resize_event", self._schedule)
+        fig.canvas.mpl_connect("scroll_event", self._on_scroll)
+        self._redraw_patterns()
+
+    def set_visible(self, key, visible):
+        """Show or hide one (layer, datatype)."""
+        entry = self.layers[key]
+        entry["visible"] = visible
+        for artist in entry["artists"]:
+            artist.set_visible(visible)
+        self._redraw_patterns()
+
+    def _on_check(self, label):
+        index = [t.get_text() for t in self.checks.labels].index(label)
+        key = self._keys_in_list[index]
+        self.set_visible(key, not self.layers[key]["visible"])
+
+    def _on_scroll(self, event):
+        """Zoom by 1.25 per wheel step around the cursor."""
+        if event.inaxes is not self.ax or event.xdata is None:
+            return
+        factor = 1 / 1.25 if event.button == "up" else 1.25
+        (vx0, vx1), (vy0, vy1) = self.ax.get_xlim(), self.ax.get_ylim()
+        x, y = event.xdata, event.ydata
+        self.ax.set_xlim(x - (x - vx0) * factor, x + (vx1 - x) * factor)
+        self.ax.set_ylim(y - (y - vy0) * factor, y + (vy1 - y) * factor)
+        self.fig.canvas.draw_idle()
+
+    def _schedule(self, *_):
+        self._timer.stop()
+        self._timer.start()
+
+    def _redraw_patterns(self):
+        """Pattern images of the visible pattern layers for the current view: one tile pixel per screen pixel,
+        only over the part of the layer in view, tiles anchored to the layout grid so they don't move when
+        panning."""
+        import math
+
+        (vx0, vx1), (vy0, vy1) = self.ax.get_xlim(), self.ax.get_ylim()
+        extent = self.ax.get_window_extent()
+        if vx1 <= vx0 or vy1 <= vy0 or extent.width <= 0 or extent.height <= 0:
+            return
+        px_per_um = min(extent.width / (vx1 - vx0), extent.height / (vy1 - vy0))
+        for entry in self.layers.values():
+            if entry["image"] is not None:
+                entry["image"].remove()
+                entry["image"] = None
+            if entry["tile"] is None or not entry["visible"]:
+                continue
+            bx0, by0, bx1, by1 = entry["bounds"]
+            ix0, iy0, ix1, iy1 = max(bx0, vx0), max(by0, vy0), min(bx1, vx1), min(by1, vy1)
+            if ix1 <= ix0 or iy1 <= iy0:
+                continue
+            th, tw = entry["tile"].shape[:2]
+            # start on a tile boundary of the layout grid, and whole tiles, so the pattern stays in place
+            ix0 = math.floor(ix0 * px_per_um / tw) * tw / px_per_um
+            iy0 = math.floor(iy0 * px_per_um / th) * th / px_per_um
+            out_w = math.ceil((ix1 - ix0) * px_per_um / tw) * tw
+            out_h = math.ceil((iy1 - iy0) * px_per_um / th) * th
+            entry["image"] = _pattern_image(self.ax, entry["tile"], entry["path"], ix0, iy0, out_w, out_h,
+                                            px_per_um)
+        # images were added after the patches; keep the view the user chose (imshow would autoscale)
+        self.ax.set_xlim(vx0, vx1, emit=False)
+        self.ax.set_ylim(vy0, vy1, emit=False)
+        self.fig.canvas.draw_idle()
+
+
+def show_window(cell, background="#000000"):
+    """Open the interactive window of a gdstk cell and wait until it is closed."""
+    import matplotlib.pyplot as plt
+
+    window = LayoutWindow(cell, background=background)
+    plt.show()
+    return window
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="View a GDSII layout with IHP SG13G2 (sg13g2.lyp) layer colors."
     )
     parser.add_argument("gds_file", help="input GDSII file")
     parser.add_argument(
-        "--cellname", help="cell to display (default: first top-level cell)"
+        "--cellname",
+        help="cell to display (default: the largest top-level cell, as gds2palace and gds_prepare_for_EM take)",
     )
     parser.add_argument(
         "--screenshot",
         metavar="FILE.png",
-        help="save the layout as a PNG to FILE.png instead of opening the GUI",
+        help="save the layout as a PNG to FILE.png instead of opening the window",
     )
     parser.add_argument(
         "--width", type=int, default=None, metavar="PIXELS",
@@ -793,11 +924,9 @@ def main():
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args()
 
-    # gdspy only here, for the command line and its interactive window (gdspy's LayoutViewer): importing
-    # gds_viewer for render_screenshot() does not need gdspy (the gds2palace MCP server passes gdstk cells)
-    import gdspy
+    import gdstk
 
-    lib = gdspy.GdsLibrary(infile=args.gds_file)
+    lib = gdstk.read_gds(args.gds_file)
     cell = pick_cell(lib, args.cellname)
     print(f"Displaying cell '{cell.name}' from {args.gds_file}")
 
@@ -807,21 +936,7 @@ def main():
         print(f"Saved screenshot to {args.screenshot}")
         return
 
-    colors = {"default": DEFAULT_COLOR}
-    patterns = {"default": DEFAULT_GDSPY_PATTERN}
-    for key, (color, pattern_name) in LAYER_STYLES.items():
-        colors[key] = color
-        patterns[key] = PATTERN_TO_GDSPY_INDEX.get(pattern_name, DEFAULT_GDSPY_PATTERN)
-    hidden = [key for key in LAYER_STYLES if key[1] in HIDDEN_DATATYPES]
-
-    gdspy.LayoutViewer(
-        cells=[cell],
-        color=colors,
-        pattern=patterns,
-        hidden_types=hidden,
-        background="#000000",
-        depth=FULL_DEPTH,
-    )
+    show_window(cell)
 
 
 if __name__ == "__main__":

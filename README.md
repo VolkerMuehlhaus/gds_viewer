@@ -1,6 +1,6 @@
 # gds_viewer
 
-A command-line GDSII layout viewer built on [gdspy](https://github.com/heitzmann/gdspy), with IHP SG13G2 layer colors and fill patterns applied automatically. No KLayout installation is required to view a layout with correct-looking colors.
+A GDSII layout viewer (a window, or a PNG without a display) built on [gdstk](https://github.com/heitzmann/gdstk) and matplotlib, with IHP SG13G2 layer colors and fill patterns applied automatically. No KLayout installation is required to view a layout with correct-looking colors.
 
 ```
 pip install gds_viewer
@@ -15,13 +15,13 @@ Without installing, `python gds_viewer.py ...` works the same way.
 From Python:
 
 ```python
-import gdspy, gds_viewer
+import gdstk, gds_viewer
 
-cell = gdspy.GdsLibrary(infile="layout.gds").top_level()[0]
+cell = gds_viewer.pick_cell(gdstk.read_gds("layout.gds"), None)   # or a cell name
 gds_viewer.render_screenshot(cell, "layout.png", width_px=1200, labels=[(10.0, 0.0, "P1")])
 ```
 
-`cell` can also be a [gdstk](https://github.com/heitzmann/gdstk) cell (gds_viewer 0.3 and newer), e.g. `gdstk.read_gds("layout.gds").top_level()[0]`; gdstk is not a dependency of gds_viewer.
+`render_screenshot` still takes a gdspy cell as well; gdspy is no longer needed by gds_viewer itself (0.3 and newer). `gds_viewer.show_window(cell)` opens the interactive window from Python.
 
 `labels` draws a marker and a text at layout coordinates, for example to show port locations. Their size follows the image size (text about 3 % of the image width), so they stay readable when the PNG is shown small. `pattern_scale` and `fill_alpha` do the same as `--pattern-scale` and `--fill-alpha`.
 
@@ -30,8 +30,8 @@ For other technologies than IHP SG13G2, pass `layer_colors={layer: "#rrggbb", ..
 ## Options
 
 - `gds_file` (positional) - input GDSII file
-- `--cellname` - cell to display (default: first top-level cell in the file)
-- `--screenshot FILE.png` - render the layout to a PNG and exit, instead of opening the interactive GUI
+- `--cellname` - cell to display (default: the top-level cell with the largest bounding box, never KLayout's `$$$CONTEXT_INFO$$$`: the cell that gds2palace and gds_prepare_for_EM take when no cell is named)
+- `--screenshot FILE.png` - render the layout to a PNG and exit, instead of opening the interactive window
 - `--width PIXELS` - width of the `--screenshot` PNG (default 2400)
 - `--pattern-scale N` - draw each fill pattern pixel as an NxN block and outlines N times wider, so the patterns stay visible when the PNG is shown smaller than its size (default 1: exact KLayout look)
 - `--fill-alpha 0..1` - add a solid fill with this opacity under the fill patterns, so metal areas stay visible when the PNG is shown small (default: exact KLayout look)
@@ -39,22 +39,24 @@ For other technologies than IHP SG13G2, pass `layer_colors={layer: "#rrggbb", ..
 
 ## Interactive viewer
 
-With no `--screenshot`, gdspy's built-in Tkinter GUI opens (pan/zoom, ruler, per-layer color/pattern/visibility toggles, ref-level depth control). Colors and fill patterns are hardcoded from `sg13g2.lyp`, so the layout looks close to its KLayout appearance without reading that file at runtime.
+With no `--screenshot`, a matplotlib window opens. It draws the layout the same way as `--screenshot`, with the exact `sg13g2.lyp` fill patterns, redrawn at screen resolution after each zoom, so they look as in KLayout at every zoom level.
 
-Purpose (datatype) layers `noqrc`, `filler`, `nofill`, and `block` are hidden by default, across every layer - toggle any of them back on from the layer list if needed.
+- Pan and zoom with the toolbar (or keys `p` and `o`), the scroll wheel zooms around the cursor, `h` (home) shows the whole layout again. The cursor position (in um) is shown at the bottom.
+- The layer list on the right (names from `sg13g2.lyp`, layer/datatype numbers) switches layers on and off. Purpose (datatype) layers `noqrc`, `filler`, `nofill` and `block` start switched off, across every layer.
+- GDS texts are shown with their layer.
 
-gdspy's viewer only supports 10 built-in fill patterns, so `sg13g2.lyp`'s ~54 distinct dither patterns are mapped to the closest of those 10 by pixel density and hatch/grid orientation - a reasonable approximation, not pixel-exact.
+Since 0.3 the window no longer uses gdspy's Tkinter viewer, which had only 10 approximate fill patterns, a ruler and per-layer color editing. The window is always flattened to all hierarchy levels.
 
 ## --screenshot export
 
-Renders headlessly via matplotlib (no GUI/display needed, works over SSH or in CI) and saves a PNG. Unlike the interactive viewer, fill patterns here are pixel-accurate reproductions of `sg13g2.lyp`'s actual dither patterns, not an approximation - reverse-engineered by rendering the real IHP SG13G2 technology through KLayout itself and sampling the resulting pixels.
+Renders headlessly via matplotlib (no GUI/display needed, works over SSH or in CI) and saves a PNG. Fill patterns (here and in the window) are pixel-accurate reproductions of `sg13g2.lyp`'s actual dither patterns, not an approximation - reverse-engineered by rendering the real IHP SG13G2 technology through KLayout itself and sampling the resulting pixels.
 
 [<img src="https://raw.githubusercontent.com/VolkerMuehlhaus/gds_viewer/main/doc/gds_viewer_screenshot.png" width="800" />](https://raw.githubusercontent.com/VolkerMuehlhaus/gds_viewer/main/doc/gds_viewer_screenshot.png)
 
 ## Requirements
 
-- `gdspy`
-- `matplotlib` and `numpy` (only needed for `--screenshot`; `pip install gds_viewer` installs all three)
+- `gdstk`, `matplotlib` and `numpy` (`pip install gds_viewer` installs them)
+- for the window: one of matplotlib's interactive backends, e.g. Tk (`tkinter`, part of most Python installations) or Qt (PySide6/PyQt)
 
 ## How the layer styling was derived
 
